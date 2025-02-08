@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import requests
 import os
 from dotenv import load_dotenv
+import datetime
 
 load_dotenv()
 
@@ -25,55 +26,91 @@ data = response.json()
 if url:
   try:
     if "values" in data:
-        df = pd.DataFrame(data["values"])
-        df.columns = df.iloc[0]  # Set first row as column names
-        df = df[1:]  # Remove first row
-        print(df)  # Display data
+      df = pd.DataFrame(data["values"])
+      df.columns = df.iloc[0]  # Set first row as column names
+      df = df[1:]  # Remove first row
+      st.success("✅ Data Loaded Successfully")
     else:
-        print("Error fetching data:", data)
-    st.success("✅ Data Loaded Successfully")
+      print("Error fetching data:", data)
+      st.error(f"❌ Error loading data: {e}")
 
-    # Display Data
-    st.subheader("📄 Data Preview")
-    st.write(df)
-
-    # Convert 'Date' column to datetime (if exists)
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'])
+    # Column names
+    # ['ID', 'Team', 'Title', 'Description', 'Status', 'Estimate', 'Priority',
+    #   'Project ID', 'Project', 'Creator', 'Assignee', 'Labels',
+    #   'Cycle Number', 'Cycle Name', 'Cycle Start', 'Cycle End', 'Created',
+    #   'Updated', 'Started', 'Triaged', 'Completed', 'Canceled', 'Archived',
+    #   'Due Date', 'Parent issue', 'Initiatives', 'Project Milestone ID',
+    #   'Project Milestone', 'SLA Status', 'Roadmaps']
 
     # Filtering UI
     st.sidebar.header("🔍 Filters")
 
-    # Filter by Category (if exists)
-    if 'Category' in df.columns:
-        categories = df['Category'].unique().tolist()
-        selected_categories = st.sidebar.multiselect("Filter by Category", categories, default=categories)
-        df = df[df['Category'].isin(selected_categories)]
+    if 'Team' in df.columns:
+      categories = df['Team'].unique().tolist()
+      selected_categories = st.sidebar.multiselect("Filter by Team", categories, default=["Engineering Support"])
+      df = df[df['Team'].isin(selected_categories)]
 
-    # Filter by Date Range (if exists)
     if 'Date' in df.columns:
-        min_date, max_date = df['Date'].min(), df['Date'].max()
-        date_range = st.sidebar.date_input("Select Date Range", [min_date, max_date], min_value=min_date, max_value=max_date)
-        df = df[(df['Date'] >= pd.to_datetime(date_range[0])) & (df['Date'] <= pd.to_datetime(date_range[1]))]
+      df['Date'] = pd.to_datetime(df['Date'])
 
-    # Choose column for visualization
-    numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+    if 'Created' in df.columns:
+      df['Created'] = pd.to_datetime(df['Created'])
+      time_filter = st.sidebar.radio(
+        "Filter by Date Range",
+        ["Past Week", "Past Month", "All Time"],
+        index=0
+      )
 
-    if numeric_columns:
-        selected_column = st.sidebar.selectbox("📊 Select a numerical column to visualize", numeric_columns)
+    today = datetime.datetime.today()
+    if time_filter == "Past Week":
+      df = df[df["Created"] >= (today - datetime.timedelta(days=7))]
+    elif time_filter == "Past Month":
+      df = df[df["Created"] >= (today - datetime.timedelta(days=30))]
 
-        # Plot filtered data
-        st.subheader("📈 Data Visualization")
-        fig, ax = plt.subplots(figsize=(10, 5))
-        df.plot(kind='line', x='Date', y=selected_column, ax=ax, marker='o')
-        ax.set_title(f"{selected_column} Over Time")
-        ax.set_xlabel("Date")
-        ax.set_ylabel(selected_column)
+    st.sidebar.header("📊 Select Dashboard")
+    dashboard_selection = st.sidebar.radio("Go to", ["Created Vs Completed"])
+
+    # Dashboard: Overview
+    if dashboard_selection == "Created Vs Completed":
+      st.header("📊 Created vs Completed Issues by Priority")
+
+    if 'Created' in df.columns and 'Completed' in df.columns:
+      df['Created'] = pd.to_datetime(df['Created'], errors='coerce')
+      df['Completed'] = pd.to_datetime(df['Completed'], errors='coerce')
+      created_df = df[df['Created'].notna() & df['Completed'].isna()]
+      completed_df = df[df['Created'].notna() & df['Completed'].notna()]
+
+      if 'Priority' in df.columns:
+        created_count = created_df.groupby('Priority').size()
+        completed_count = completed_df.groupby('Priority').size()
+
+        comparison_df = pd.DataFrame({
+          'Created': created_count,
+          'Completed': completed_count
+        }).fillna(0)  # Fill missing values with 0
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+        bars = comparison_df.plot(kind='bar', ax=ax)
+
+        ax.set_ylabel("Count")
+        ax.set_title("Created vs Completed Issues by Priority")
+        ax.legend(["Created", "Completed"])
+
+        # Add count labels on the bars
+        for bar_container in bars.containers:
+          ax.bar_label(bar_container, fmt="%d", label_type="edge", fontsize=10, padding=3)
         st.pyplot(fig)
-
+        st.subheader("📋 Data Table")
+        st.write(comparison_df)
+      else:
+        st.warning("⚠️ 'Priority' column not found in the dataset.")
     else:
-      st.warning("⚠ No numerical columns found for visualization.")
-    
+      st.error("❌ 'Created' and 'Completed' columns are required.")
+
+
+    # Display 
+    st.subheader("📄 Data")
+    st.write(df)
   except Exception as e:
       st.error(f"❌ Error loading data: {e}")
 else:
