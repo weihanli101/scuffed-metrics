@@ -63,9 +63,13 @@ if url:
 
     today = datetime.datetime.today()
     if time_filter == "Past Week":
-      df = df[df["Created"] >= (today - datetime.timedelta(days=7))]
+      start_date = today - datetime.timedelta(days=7)
+      df = df[df["Created"] >= start_date]
+      st.caption(f"📅 Showing data from **{start_date.strftime('%B %d, %Y')}** to **{today.strftime('%B %d, %Y')}**")
     elif time_filter == "Past Month":
-      df = df[df["Created"] >= (today - datetime.timedelta(days=30))]
+      start_date = today - datetime.timedelta(days=30)
+      df = df[df["Created"] >= start_date]
+      st.caption(f"📅 Showing data from **{start_date.strftime('%B %d, %Y')}** to **{today.strftime('%B %d, %Y')}**")
 
     st.sidebar.header("📊 Select Dashboard")
     dashboard_selection = st.sidebar.radio("Go to", ["Created Vs Completed"])
