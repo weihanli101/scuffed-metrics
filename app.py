@@ -13,11 +13,45 @@ load_dotenv()
 API_KEY = os.getenv("API_KEY")
 SHEET_ID = os.getenv("SHEET_ID")
 SHEET_NAME = os.getenv("SHEET_NAME")
+PRODUCT_AREA_LABELS = [
+  "Action Items",
+  "Alert Grouping",
+  "Alert Sources Configuration",
+  "Alert Urgency",
+  "Alerts",
+  "Authentication/Authorization",
+  "Catalog",
+  "Environments",
+  "Escalation Policies",
+  "Form Fields",
+  "Heartbeats",
+  "Incidents",
+  "Integrations",
+  "LCR",
+  "Metrics",
+  "On-Call Shift Reminders",
+  "On-Call User Group Updates",
+  "Onboarding",
+  "Paging",
+  "Retrospectives",
+  "Roles",
+  "Schedules(Shifts/Calendar/Rotations...)",
+  "Services",
+  "Severities",
+  "Smart Defaults",
+  "Status Pages"
+]
 
-def extract_valid_labels(label_str):
+
+def extract_labels(label_str, prefix):
   if pd.isna(label_str):
     return []
-  return [label.strip() for label in label_str.split(',') if label.strip().startswith("C -")]
+  return [label.strip() for label in label_str.split(',') if label.strip().startswith(prefix)]
+
+def extract_labels_by_exact_matches(label_str, match_list):
+  if pd.isna(label_str):
+    return []
+  return [label.strip() for label in label_str.split(',') if label.strip() in match_list]
 
 st.title("📊 Scuffed Metrics")
 
@@ -89,14 +123,16 @@ if url:
       df = df[(df['Created'] >= start_date) & (df['Created'] <= end_date)]
       st.caption(f"📅 Showing data from **{start_date.strftime('%B %d, %Y')}** to **{end_date.strftime('%B %d, %Y')}**")
 
-    df['Filtered_Labels'] = df['Labels'].apply(extract_valid_labels)
-    df_exploded = df.explode('Filtered_Labels')
-    df_exploded = df_exploded[df_exploded['Filtered_Labels'].notna()]
-    created_df = df_exploded[df_exploded['Created'].notna() & df_exploded['Completed'].isna()]
-    completed_df = df_exploded[df_exploded['Created'].notna() & df_exploded['Completed'].notna()]
-
     st.sidebar.header("📊 Select Dashboard")
-    dashboard_selection = st.sidebar.radio("Go to", ["Created/Completed By Urgency", "Created/Completed By Customer"])
+    dashboard_selection = st.sidebar.radio(
+      "Go to", 
+      [
+        "Created/Completed By Urgency", 
+        "Created/Completed By Customer",
+        "Total Unable To Replicate",
+        "# Of Tickets Grouped By Product Area"
+      ]
+    )
 
     # Dashboard: Overview
     if dashboard_selection == "Created/Completed By Urgency":
@@ -114,7 +150,7 @@ if url:
           comparison_df = pd.DataFrame({
             'Created': created_count,
             'Completed': completed_count
-          }).fillna(0)  # Fill missing values with 0
+          }).fillna(0)
 
           fig, ax = plt.subplots(figsize=(8, 5))
           bars = comparison_df.plot(kind='bar', ax=ax)
@@ -123,7 +159,6 @@ if url:
           ax.set_title("Created vs Completed Issues by Priority")
           ax.legend(["Created", "Completed"])
 
-          # Add count labels on the bars
           for bar_container in bars.containers:
             ax.bar_label(bar_container, fmt="%d", label_type="edge", fontsize=10, padding=3)
           st.pyplot(fig)
@@ -136,7 +171,11 @@ if url:
 
     elif dashboard_selection == "Created/Completed By Customer":
       st.subheader("👤 Created/Completed By Customer")
-
+      df['Filtered_Labels'] = df['Labels'].apply(lambda label: extract_labels(label, "C -"))
+      df_exploded = df.explode('Filtered_Labels')
+      df_exploded = df_exploded[df_exploded['Filtered_Labels'].notna()]
+      created_df = df_exploded[df_exploded['Created'].notna() & df_exploded['Completed'].isna()]
+      completed_df = df_exploded[df_exploded['Created'].notna() & df_exploded['Completed'].notna()]
       created_count = created_df.groupby('Filtered_Labels').size()
       completed_count = completed_df.groupby('Filtered_Labels').size()
 
@@ -158,11 +197,35 @@ if url:
       st.pyplot(fig)
       st.subheader("📋 Data Table")
       st.write(label_comparison_df)
+    elif dashboard_selection == "Total Unable To Replicate":
+      st.subheader("🔍 Total Unable To Replicate Issues")
+      df['Filtered_Labels'] = df['Labels'].apply(lambda label: extract_labels(label, "Unable To Replicate"))
+      df_exploded = df.explode('Filtered_Labels')
+      df_exploded = df_exploded[df_exploded['Filtered_Labels'].notna()]
+      unable_to_replicate_df = df_exploded[df_exploded['Filtered_Labels'] == "Unable To Replicate"]
+      total_unable_to_replicate = len(unable_to_replicate_df)
+      st.metric(label="Total 'Unable To Replicate' Issues", value=total_unable_to_replicate)
+      st.subheader("📋 Issues Marked as 'Unable To Replicate'")
+      st.write(unable_to_replicate_df)
+    elif dashboard_selection == "# Of Tickets Grouped By Product Area":
+      st.subheader("📱 # Of Tickets Grouped By Product Area")
+      df['Filtered_Labels'] = df['Labels'].apply(lambda label: extract_labels_by_exact_matches(label, PRODUCT_AREA_LABELS))
+      df_exploded = df.explode('Filtered_Labels')
+      df_exploded = df_exploded[df_exploded['Filtered_Labels'].notna()]
+      label_summary = df_exploded['Filtered_Labels'].value_counts()
+      fig, ax = plt.subplots(figsize=(10, len(label_summary) / 2))
+      label_summary.plot(kind='barh', ax=ax)
+      ax.set_xlabel("Count")
+      ax.set_title("Total Rows per Label")
+      for bar in ax.containers:
+        ax.bar_label(bar, fmt="%d", label_type="edge", fontsize=10, padding=3)
+
+      st.pyplot(fig)
 
 
-    # Display 
-    st.subheader("📄 Data")
-    st.write(df)
+    if dashboard_selection is None or dashboard_selection == "":
+      st.subheader("📄 Data")
+      st.write(df)
   except Exception as e:
       st.error(f"❌ Error loading data: {e}")
 else:
