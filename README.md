@@ -1,11 +1,11 @@
 # Scuffed Metrics
 
 ```
-# install deps
-pip install -r requirements.txt
-
 # run vitrual env
 source myenv/bin/activate
+
+# install deps
+pip install -r requirements.txt
 
 # run
 streamlit run app.py
